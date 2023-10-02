@@ -32,6 +32,7 @@ import com.vaadin.flow.component.Synchronize;
 import com.vaadin.flow.component.Tag;
 import com.vaadin.flow.component.dependency.JsModule;
 import com.vaadin.flow.component.dependency.NpmPackage;
+import com.vaadin.flow.dom.DebouncePhase;
 import com.vaadin.flow.dom.DomListenerRegistration;
 import com.vaadin.flow.shared.Registration;
 import elemental.json.JsonObject;
@@ -76,6 +77,11 @@ public class GoogleMap extends Component implements HasSize {
     if (!StringUtils.isEmpty(language)) {
       this.getElement().setAttribute("language", language);
     }
+    getElement().addEventListener("google-map-ready", event -> {
+      getElement()
+          .executeJs("google.maps.event.addListener(this.map, 'bounds_changed', (event) => {"
+              + "this.fire('google-map-bounds_changed', $0.map.getBounds());" + "});", this);
+    });
   }
 
   @Synchronize("google-map-idle")
@@ -553,4 +559,59 @@ public class GoogleMap extends Component implements HasSize {
   public void setClusteringRenderer(String customRenderer) {
     this.getElement().setProperty("customRenderer", customRenderer);
   }
+
+  /**
+   * Adds a GoogleMapIdleEvent listener. The listener is called when the map is in idle state (after
+   * pan or zoom)
+   * 
+   * @param listener
+   * @return
+   */
+  public Registration addMapIdleListener(ComponentEventListener<GoogleMapIdleEvent> listener) {
+    DomListenerRegistration registration =
+        this.getElement().addEventListener("google-map-idle", ev -> {
+          listener.onComponentEvent(new GoogleMapIdleEvent(this, true));
+        });
+    return registration::remove;
+  }
+
+  public static class GoogleMapIdleEvent extends ComponentEvent<GoogleMap> {
+    public GoogleMapIdleEvent(GoogleMap source, boolean fromClient) {
+      super(source, true);
+    }
+  }
+
+  /**
+   * Adds a GoogleMapBoundsChangedEvent listener. The listener is called when the map is moved or
+   * zoomed
+   * 
+   * @param listener
+   * @return
+   */
+  public Registration addGoogleMapBoundsChangedListener(
+      ComponentEventListener<GoogleMapBoundsChangedEvent> listener) {
+
+    DomListenerRegistration registration =
+        this.getElement().addEventListener("google-map-bounds_changed", ev -> {
+          listener.onComponentEvent(new GoogleMapBoundsChangedEvent(this, true,
+              new LatLonBounds(ev.getEventData().get("event.detail"))));
+        }).debounce(1000, DebouncePhase.TRAILING).addEventData("event.detail");
+    return registration::remove;
+  }
+
+  public static class GoogleMapBoundsChangedEvent extends ComponentEvent<GoogleMap> {
+
+    private final LatLonBounds bounds;
+
+    public GoogleMapBoundsChangedEvent(GoogleMap source, boolean fromClient,
+        LatLonBounds latLonBounds) {
+      super(source, true);
+      this.bounds = latLonBounds;
+    }
+
+    public LatLonBounds getBounds() {
+      return bounds;
+    }
+  }
+
 }
